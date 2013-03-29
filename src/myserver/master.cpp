@@ -16,8 +16,10 @@ typedef struct request_Info {
 } reqInfo;
 
 typedef struct worker_Info {
+    int tag;
     int num_idle_cpu;
     int num_idle_disk;
+    int idle_round;
 } workerInfo;
 
 static struct Master_state {
@@ -74,8 +76,10 @@ void handle_new_worker_online(Worker_handle worker_handle, int tag) {
   mstate.num_worker_nodes ++;
   // we put new worker into the map to keep track of the status of each worker node
   workerInfo* worker_info = new workerInfo();
+  worker_info->tag = tag;
   worker_info->num_idle_cpu = 2;
   worker_info->num_idle_disk = 1;
+  worker_info->idle_round = 0;
   mstate.workersMap[worker_handle] = worker_info;
 
   // 'tag' allows you to identify which worker request this response
@@ -115,6 +119,7 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
         Request_msg thisRequest = mstate.disk_waiting_queue.front();
         send_request_to_worker( worker_handle, thisRequest);
         mstate.disk_waiting_queue.erase(mstate.disk_waiting_queue.begin());
+        mstate.workersMap[worker_handle]->idle_round = 0;
     }
     return;
   }
@@ -129,6 +134,7 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
     Request_msg thisRequest = mstate.cpu_waiting_queue.front();
     send_request_to_worker( worker_handle, thisRequest);
     mstate.cpu_waiting_queue.erase(mstate.cpu_waiting_queue.begin());
+    mstate.workersMap[worker_handle]->idle_round = 0;
   }
 }
 
@@ -162,6 +168,7 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
         send_request_to_worker(thisWorker, worker_req);
         mstate.workersMap[thisWorker]->num_idle_disk--; 
         mstate.disk_workers_queue.erase(mstate.disk_workers_queue.begin());
+        mstate.workersMap[thisWorker]->idle_round = 0;
       }else {
         mstate.disk_waiting_queue.push_back(worker_req);
       }
@@ -177,20 +184,52 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   send_request_to_worker(thisWorker, worker_req);
   mstate.workersMap[thisWorker]->num_idle_cpu--; 
   mstate.cpu_workers_queue.erase(mstate.cpu_workers_queue.begin());
+  mstate.workersMap[thisWorker]->idle_round = 0;
 }
 
-void print_worker_status() {
+void kill_worker(Worker_handle worker_handle) {
+    // search both cpu_workers_queue and disk_workers_queue
+    kill_worker_node(worker_handle);
+    mstate.num_worker_nodes --;
+    int i;
+    for(i = mstate.cpu_workers_queue.size() - 1; i >= 0; i--) {
+        if(mstate.cpu_workers_queue[i] == worker_handle ) {
+            //printf("DONE1\n");
+            mstate.cpu_workers_queue.erase(mstate.cpu_workers_queue.begin() + i);
+        }
+    }
+    for(i = mstate.disk_workers_queue.size() - 1; i >= 0; i--) {
+        if(mstate.disk_workers_queue[i] == worker_handle ) {
+            //printf("DONE2\n");
+            mstate.disk_workers_queue.erase(mstate.disk_workers_queue.begin() + i);
+        }
+    }
+   std::map<Worker_handle, workerInfo*>::iterator it = mstate.workersMap.find(worker_handle);
+   delete(it->second);
+   mstate.workersMap.erase(it);
+   //printf("end kill worker\n");
+}
+
+void check_worker_status() {
     std::map<Worker_handle, workerInfo*>::iterator it; 
     for(it = mstate.workersMap.begin(); it != mstate.workersMap.end(); it ++) {
-       printf("| cpu: %d, disk: %d", (it->second)->num_idle_cpu, (it->second)->num_idle_disk);
+        printf("| tag: %d, cpu: %d, disk: %d, round: %d", (it->second)->tag, (it->second)->num_idle_cpu,
+                (it->second)->num_idle_disk, (it->second)->idle_round);
+        if( (it->second)->num_idle_cpu == 2 && (it->second)->num_idle_disk == 1) {
+           (it->second)->idle_round ++;
+           if( (it->second)->idle_round == 2 && mstate.num_worker_nodes != 1) {
+                printf("\nKILL worker %d !!!!\n", (it->second)->tag);
+                kill_worker(it->first);
+           }
+        } 
     }
     printf("\n");
 }
 
 void handle_tick() {
 
-  print_worker_status(); 
-  if( mstate.num_worker_nodes < mstate.max_num_workers && mstate.cpu_waiting_queue.size() >= 3){
+  check_worker_status(); 
+  if( mstate.num_worker_nodes < mstate.max_num_workers && mstate.cpu_waiting_queue.size() >= 1){
       int tag = random();
       Request_msg req(tag);
       char name[20];
