@@ -190,7 +190,7 @@ void print_worker_status() {
 void handle_tick() {
 
   print_worker_status(); 
-  if( mstate.num_worker_nodes < mstate.max_num_workers){
+  if( mstate.num_worker_nodes < mstate.max_num_workers && mstate.cpu_waiting_queue.size() >= 3){
       int tag = random();
       Request_msg req(tag);
       char name[20];
