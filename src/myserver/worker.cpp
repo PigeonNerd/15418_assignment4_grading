@@ -84,7 +84,7 @@ void worker_node_init(const Request_msg& params) {
   // might initialize a few data structures, or maybe even spawn a few
   // pthreads here.  Remember, when running on Amazon servers, worker
   // processes will run on an instance with a dual-core CPU.
-  printf("**** Initializing worker: %s ****\n", params.get_arg("name").c_str());
+  fprintf( stdout, "**** Initializing worker: %s ****\n", params.get_arg("name").c_str());
   pthread_t thread_1;
   pthread_t thread_2;
   pthread_t thread_3;
