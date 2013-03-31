@@ -124,7 +124,7 @@ void handle_new_worker_online(Worker_handle worker_handle, int tag) {
   mstate.cpu_workers_queue.push_back( worker_handle );
   mstate.disk_workers_queue.push_back( worker_handle );
 
-  if(mstate.cpu_waiting_queue.size() != 0) {
+  while(mstate.cpu_waiting_queue.size() != 0 && mstate.cpu_workers_queue.size() != 0) {
     Worker_handle thisWorker = get_worker(mstate.cpu_workers_queue);
     Request_msg req = get_request(mstate.cpu_waiting_queue);
     send_request_to_worker(thisWorker, req);
@@ -133,7 +133,7 @@ void handle_new_worker_online(Worker_handle worker_handle, int tag) {
     mstate.workersMap[thisWorker]->num_idle_cpu --;
   }
 
-  if(mstate.disk_waiting_queue.size() != 0) {
+  while(mstate.disk_waiting_queue.size() != 0 && mstate.disk_workers_queue.size() != 0) {
     Worker_handle thisWorker = get_worker(mstate.disk_workers_queue);
     Request_msg req = get_request(mstate.disk_waiting_queue);
     send_request_to_worker(thisWorker, req);
@@ -250,11 +250,15 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   std:: cout<< "***** "<<gap<<" *****\n";
   if( mstate.time_gap - gap > 0) {
       mstate.decrease_round++;
+  } 
+  else {
+      mstate.decrease_round = 0;
   }
   if(mstate.decrease_round == 2) {
       if(mstate.num_worker_nodes < mstate.max_num_workers) {
         request_for_worker();
     }
+      mstate.decrease_round = 0;
   }
   mstate.time_gap = gap;
 
@@ -303,6 +307,9 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     mstate.disk_waiting_queue.push_back(worker_req);
   }
   else if (worker_req.get_arg("cmd").compare("compareprimes") == 0) {
+      /*if(mstate.num_worker_nodes < mstate.max_num_workers) {
+        request_for_worker();
+      }*/
       int params[4];
       params[0] = atoi(worker_req.get_arg("n1").c_str());
       params[1] = atoi(worker_req.get_arg("n2").c_str());
