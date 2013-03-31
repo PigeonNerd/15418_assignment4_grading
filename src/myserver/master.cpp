@@ -279,6 +279,9 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   thisInfo->client = client_handle;
   mstate.requestsMap[tag] = thisInfo;
 
+  // for testing
+  int isCompare = 1;
+
   if(worker_req.get_arg("cmd").compare("mostviewed") == 0) {
     mstate.disk_waiting_queue.push_back(worker_req);
   }
@@ -286,6 +289,7 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
       /*if(mstate.num_worker_nodes < mstate.max_num_workers) {
         request_for_worker();
       }*/
+      isCompare = 4;
       int params[4];
       params[0] = atoi(worker_req.get_arg("n1").c_str());
       params[1] = atoi(worker_req.get_arg("n2").c_str());
@@ -310,13 +314,14 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     mstate.cpu_waiting_queue.push_back(worker_req);
   }
 
-  if(mstate.cpu_waiting_queue.size() != 0 && mstate.cpu_workers_queue.size() != 0) {
+  while(isCompare && mstate.cpu_waiting_queue.size() != 0 && mstate.cpu_workers_queue.size() != 0) {
     Worker_handle thisWorker = get_worker(mstate.cpu_workers_queue);
     Request_msg req = get_request(mstate.cpu_waiting_queue);
     send_request_to_worker(thisWorker, req);
     mstate.num_pending_client_requests++;
     mstate.workersMap[thisWorker]->idle_round = 0;
     mstate.workersMap[thisWorker]->num_idle_cpu --;
+    isCompare--;
   }
 
   if(mstate.disk_waiting_queue.size() != 0 && mstate.disk_workers_queue.size() != 0) {
