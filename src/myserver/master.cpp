@@ -9,6 +9,7 @@
 #include "server/messages.h"
 #include "server/master.h"
 #include "tools/work_queue.h"
+#include "tools/cycle_timer.h"
 #include <iostream>
 
 #define CACHE_TICKETS 5
@@ -43,6 +44,10 @@ static struct Master_state {
   int num_pending_client_requests;
   int num_worker_nodes;
 
+  double time_gap;
+  unsigned long long previousTick;
+  int decrease_round;
+
   std::vector<Worker_handle>cpu_workers_queue;
   std::vector<Worker_handle>disk_workers_queue;
   std::vector<Request_msg>cpu_waiting_queue;
@@ -67,7 +72,14 @@ Request_msg get_request( std::vector<Request_msg>& queue ) {
     return thisRequest;
 }
 
-
+void request_for_worker() {
+  int tag = random();
+  Request_msg req(tag);
+  char name[20];
+  sprintf(name, "my worker %d", mstate.num_worker_nodes);
+  req.set_arg("name", name);
+  request_new_worker_node(req);
+}
 
 void master_node_init(int max_workers, int& tick_period) {
 
@@ -81,17 +93,15 @@ void master_node_init(int max_workers, int& tick_period) {
   mstate.num_worker_nodes = 0;
   mstate.num_pending_client_requests = 0;
   // used for debug
-  
+  mstate.previousTick = 0;
+  mstate.time_gap = 0;
+  mstate.decrease_round = 0; 
+
   // don't mark the server as ready until the server is ready to go.
   // This is actually when the first worker is up and running, not
   // when 'master_node_init' returnes
   mstate.server_ready = false;
-  int tag = random();
-  Request_msg req(tag);
-  char name[20];
-  sprintf(name, "my worker %d", mstate.num_worker_nodes);
-  req.set_arg("name", name);
-  request_new_worker_node(req);
+  request_for_worker();
 }
 
 void handle_new_worker_online(Worker_handle worker_handle, int tag) {
@@ -212,6 +222,19 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     send_client_response(client_handle, resp);
     return;
   }
+  
+ /* unsigned long long currentTick = CycleTimer::currentTicks();
+  unsigned long long gap = (currentTick - mstate.previousTick) * CycleTimer::msPerTick();
+  mstate.previousTick = currentTick;
+  std:: cout<< "***** "<<gap<<" *****\n";
+  if( mstate.time_gap - gap > 0) {
+    if(mstate.num_worker_nodes < mstate.max_num_workers) {
+        request_for_worker();
+    }
+  } 
+  mstate.time_gap = gap;*/
+
+
   int tag = random(); 
   Request_msg worker_req(tag, client_req);
 
@@ -226,13 +249,11 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   // store the waiting client into the map
   reqInfo* thisInfo = new reqInfo();
   thisInfo->req = new Request_msg(worker_req);
-
   thisInfo->client = client_handle;
-  //mstate.requestsMap[tag] = client_handle;
   mstate.requestsMap[tag] = thisInfo;
   
   // we have disk intensive work
-  if(worker_req.get_arg("cmd").compare("mostviewed") == 0) {
+ /* if(worker_req.get_arg("cmd").compare("mostviewed") == 0) {
       // we have worker for it
       if( mstate.disk_workers_queue.size() != 0) {
         Worker_handle thisWorker = get_worker(mstate.disk_workers_queue);
@@ -253,7 +274,32 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   Worker_handle thisWorker =get_worker(mstate.cpu_workers_queue);
   send_request_to_worker(thisWorker, worker_req);
   mstate.workersMap[thisWorker]->num_idle_cpu--; 
-  mstate.workersMap[thisWorker]->idle_round = 0;
+  mstate.workersMap[thisWorker]->idle_round = 0;*/
+
+  if(worker_req.get_arg("cmd").compare("mostviewed") == 0) {
+    mstate.disk_waiting_queue.push_back(worker_req);
+  } else {
+    mstate.cpu_waiting_queue.push_back(worker_req);
+  }
+
+  if(mstate.cpu_waiting_queue.size() != 0 && mstate.cpu_workers_queue.size() != 0) {
+    Worker_handle thisWorker = get_worker(mstate.cpu_workers_queue);
+    Request_msg req = get_request(mstate.cpu_waiting_queue);
+    send_request_to_worker(thisWorker, req);
+    mstate.num_pending_client_requests++;
+    mstate.workersMap[thisWorker]->idle_round = 0;
+    mstate.workersMap[thisWorker]->num_idle_cpu --;
+  }
+
+  if(mstate.disk_waiting_queue.size() != 0 && mstate.disk_workers_queue.size() != 0) {
+    Worker_handle thisWorker = get_worker(mstate.disk_workers_queue);
+    Request_msg req = get_request(mstate.disk_waiting_queue);
+    send_request_to_worker(thisWorker, req);
+    mstate.workersMap[thisWorker]->idle_round = 0;
+    mstate.workersMap[thisWorker]->num_idle_disk --;
+  }
+
+
 }
 
 void kill_worker(Worker_handle worker_handle) {
@@ -297,15 +343,10 @@ void check_worker_status() {
 
 void handle_tick() {
 
-  check_worker_status(); 
   if( mstate.num_worker_nodes < mstate.max_num_workers && mstate.cpu_waiting_queue.size() >= 1){
-      int tag = random();
-      Request_msg req(tag);
-      char name[20];
-      sprintf(name, "my worker %d", mstate.num_worker_nodes);
-      req.set_arg("name", name);
-      request_new_worker_node(req);
+    request_for_worker();
   }
+  check_worker_status(); 
   // TODO: you may wish to take action here.  This method is called at
   // fixed time intervals, according to how you set 'tick_period' in
   // 'master_node_init'.
