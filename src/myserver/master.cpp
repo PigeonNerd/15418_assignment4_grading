@@ -86,7 +86,7 @@ void master_node_init(int max_workers, int& tick_period) {
 
   // set up tick handler to fire every 5 seconds. (feel free to
   // configure as you please)
-  tick_period = 2;
+  tick_period = 1;
   //printf("The maximum number of workers %d\n", max_workers);
   // HOW TO SET THIS NUMBER ?
   mstate.max_num_workers = max_workers;
@@ -244,7 +244,7 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     return;
   }
   
-  unsigned long long currentTick = CycleTimer::currentTicks();
+  /*unsigned long long currentTick = CycleTimer::currentTicks();
   unsigned long long gap = (currentTick - mstate.previousTick) * CycleTimer::msPerTick();
   mstate.previousTick = currentTick;
   std:: cout<< "***** "<<gap<<" *****\n";
@@ -260,7 +260,7 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     }
       mstate.decrease_round = 0;
   }
-  mstate.time_gap = gap;
+  mstate.time_gap = gap;*/
 
   int tag = random(); 
   Request_msg worker_req(tag, client_req);
