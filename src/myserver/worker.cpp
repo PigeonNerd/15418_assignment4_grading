@@ -54,12 +54,24 @@ static void execute_compareprimes(const Request_msg& req, Response_msg& resp) {
       resp.set_response("There are more primes in second range.");
 }
 
+static void execute_compareprimes2(const Request_msg& req, Response_msg& resp) {
+    int n;
+    std::string result;
+    // grab the four arguments defining the two ranges
+    n = atoi(req.get_arg("n").c_str());
+    Request_msg dummy_req(0);
+    Response_msg dummy_resp(0);
+    create_computeprimes_req(dummy_req, n);
+    execute_work(dummy_req, dummy_resp);
+    result =req.get_arg("index")+":"+dummy_resp.get_response();
+    resp.set_response(result);
+}
 void* executeWork_cpu(void* arg) {
     while(1) {
       Request_msg req = wstate.cpu_work_queue.get_work();
       Response_msg resp(req.get_tag());
       if (req.get_arg("cmd").compare("compareprimes") == 0) {
-        execute_compareprimes(req, resp);
+        execute_compareprimes2(req, resp);
       } else {
         execute_work(req, resp);
       }
@@ -77,7 +89,6 @@ void* executeWork_disk(void* arg) {
     }
     return NULL;
 }
-
 void worker_node_init(const Request_msg& params) {
 
   // This is your chance to initialize your worker.  For example, you

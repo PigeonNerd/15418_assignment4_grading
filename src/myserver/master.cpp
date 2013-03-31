@@ -18,6 +18,7 @@
 typedef struct Request_Info {
     Request_msg* req;
     Client_handle client;
+    int counts[5];
 } reqInfo;
 
 typedef struct Worker_Info {
@@ -73,12 +74,12 @@ Request_msg get_request( std::vector<Request_msg>& queue ) {
 }
 
 void request_for_worker() {
-  int tag = random();
-  Request_msg req(tag);
-  char name[20];
-  sprintf(name, "my worker %d", mstate.num_worker_nodes);
-  req.set_arg("name", name);
-  request_new_worker_node(req);
+     int tag = random();
+     Request_msg req(tag);
+     char name[20];
+     sprintf(name, "my worker %d", mstate.num_worker_nodes);
+     req.set_arg("name", name);
+     request_new_worker_node(req);
 }
 
 void master_node_init(int max_workers, int& tick_period) {
@@ -165,28 +166,48 @@ std::string build_cache_key( Request_msg& req){
     return key;
 }
 
-
 void handle_worker_response(Worker_handle worker_handle, const Response_msg& resp) {
-  
-  // put the reponse into a cache
-  cacheInfo* cache_ele = new cacheInfo();
-  cache_ele->tickets = CACHE_TICKETS;  
-  cache_ele->res = resp;
-
-  bool isDiskRequestDone = false;
   std::map<int,reqInfo*>::iterator it = mstate.requestsMap.find(resp.get_tag());
-  std::string key = build_cache_key(*((it->second)->req));
-  mstate.cache[key] = cache_ele; 
+  bool isDiskRequestDone = false;
+  // do not send response until all done
+  if ((*((it->second)->req)).get_arg("cmd").compare("compareprimes") == 0) {
+      std::string result = resp.get_response();   
+      unsigned pos = result.find(":");
+      int index = atoi(result.substr(0,1).c_str());
+      int n = atoi(result.substr(pos+1).c_str());
+      it->second->counts[index] = n;
+      it->second->counts[4] ++;
+      // all sub requests finished
+      if( it->second->counts[4] == 4) {
+          Response_msg real_resp;
+        if (it->second->counts[1]-it->second->counts[0] > it->second->counts[3]-it->second->counts[2])
+          real_resp.set_response("There are more primes in first range.");
+        else
+          real_resp.set_response("There are more primes in second range.");
+        send_client_response((it->second)->client, real_resp);
+        delete( (it->second)->req );
+        delete( it->second );
+        mstate.requestsMap.erase(it);
+      }
+  } else {
+    // send the message back to the client
+    send_client_response((it->second)->client, resp);
+    // put the reponse into a cache
+    cacheInfo* cache_ele = new cacheInfo();
+    cache_ele->tickets = CACHE_TICKETS;  
+    cache_ele->res = resp;
+    std::string key = build_cache_key(*((it->second)->req));
+    mstate.cache[key] = cache_ele; 
   
-  // send the message back to the client
-  send_client_response((it->second)->client, resp);
-  //cout<<(*((it->second)->req)).get_arg("cmd")<<"###\n";
-  if( (*((it->second)->req)).get_arg("cmd").compare("mostviewed") == 0) {
-        isDiskRequestDone = true;
+    if( (*((it->second)->req)).get_arg("cmd").compare("mostviewed") == 0) {
+            isDiskRequestDone = true;
+      }
+    delete( (it->second)->req );
+    delete( it->second );
+    mstate.requestsMap.erase(it);
   }
-  delete( (it->second)->req );
-  delete( it->second );
-  mstate.requestsMap.erase(it);
+  
+  //cout<<(*((it->second)->req)).get_arg("cmd")<<"###\n";
   if( isDiskRequestDone ) {
     if(mstate.disk_waiting_queue.size() == 0) {
         mstate.disk_workers_queue.push_back( worker_handle);
@@ -223,17 +244,19 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     return;
   }
   
- /* unsigned long long currentTick = CycleTimer::currentTicks();
+  unsigned long long currentTick = CycleTimer::currentTicks();
   unsigned long long gap = (currentTick - mstate.previousTick) * CycleTimer::msPerTick();
   mstate.previousTick = currentTick;
   std:: cout<< "***** "<<gap<<" *****\n";
   if( mstate.time_gap - gap > 0) {
-    if(mstate.num_worker_nodes < mstate.max_num_workers) {
+      mstate.decrease_round++;
+  }
+  if(mstate.decrease_round == 2) {
+      if(mstate.num_worker_nodes < mstate.max_num_workers) {
         request_for_worker();
     }
-  } 
-  mstate.time_gap = gap;*/
-
+  }
+  mstate.time_gap = gap;
 
   int tag = random(); 
   Request_msg worker_req(tag, client_req);
@@ -278,7 +301,28 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
 
   if(worker_req.get_arg("cmd").compare("mostviewed") == 0) {
     mstate.disk_waiting_queue.push_back(worker_req);
-  } else {
+  }
+  else if (worker_req.get_arg("cmd").compare("compareprimes") == 0) {
+      int params[4];
+      params[0] = atoi(worker_req.get_arg("n1").c_str());
+      params[1] = atoi(worker_req.get_arg("n2").c_str());
+      params[2] = atoi(worker_req.get_arg("n3").c_str());
+      params[3] = atoi(worker_req.get_arg("n4").c_str());
+      // initialize the sub-requests that have been completed  
+      mstate.requestsMap[tag]->counts[4] = 0;
+      for(int i = 0; i < 4; i++) {
+          std::ostringstream convert1;
+          std::ostringstream convert2;
+          convert1 << params[i];
+          convert2 << i;
+          Request_msg dummy_req(tag);
+          dummy_req.set_arg("cmd", "compareprimes");
+          dummy_req.set_arg("n", convert1.str());
+          dummy_req.set_arg("index", convert2.str());
+          mstate.cpu_waiting_queue.push_back(dummy_req);
+      }
+  }
+  else {
     mstate.cpu_waiting_queue.push_back(worker_req);
   }
 
@@ -298,8 +342,6 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     mstate.workersMap[thisWorker]->idle_round = 0;
     mstate.workersMap[thisWorker]->num_idle_disk --;
   }
-
-
 }
 
 void kill_worker(Worker_handle worker_handle) {
@@ -350,7 +392,8 @@ void handle_tick() {
   // TODO: you may wish to take action here.  This method is called at
   // fixed time intervals, according to how you set 'tick_period' in
   // 'master_node_init'.
-  // p
+  // 
+  
   fprintf(stdout, "NUM OF WAITING REQUESTS: %lu\n", mstate.cpu_waiting_queue.size());
   fprintf(stdout, "NUM OF PENDING REQUESTS: %d\n", mstate.num_pending_client_requests);
   fprintf(stdout, "NUM OF WORKERS: %d \n", mstate.num_worker_nodes);
