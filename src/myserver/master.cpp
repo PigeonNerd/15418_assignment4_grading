@@ -48,6 +48,7 @@ static struct Master_state {
   double time_gap;
   unsigned long long previousTick;
   int decrease_round;
+  bool first_call;
 
   std::vector<Worker_handle>cpu_workers_queue;
   std::vector<Worker_handle>disk_workers_queue;
@@ -97,7 +98,7 @@ void master_node_init(int max_workers, int& tick_period) {
   mstate.previousTick = 0;
   mstate.time_gap = 0;
   mstate.decrease_round = 0; 
-
+  mstate.first_call = false;
   // don't mark the server as ready until the server is ready to go.
   // This is actually when the first worker is up and running, not
   // when 'master_node_init' returnes
@@ -243,8 +244,8 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     send_client_response(client_handle, resp);
     return;
   }
-  
-  /*unsigned long long currentTick = CycleTimer::currentTicks();
+  /*if (!mstate.first_call) { 
+  unsigned long long currentTick = CycleTimer::currentTicks();
   unsigned long long gap = (currentTick - mstate.previousTick) * CycleTimer::msPerTick();
   mstate.previousTick = currentTick;
   std:: cout<< "***** "<<gap<<" *****\n";
@@ -256,12 +257,13 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   }
   if(mstate.decrease_round == 2) {
       if(mstate.num_worker_nodes < mstate.max_num_workers) {
+        mstate.first_call = true;
         request_for_worker();
     }
       mstate.decrease_round = 0;
   }
-  mstate.time_gap = gap;*/
-
+  mstate.time_gap = gap;
+  }*/
   int tag = random(); 
   Request_msg worker_req(tag, client_req);
 
