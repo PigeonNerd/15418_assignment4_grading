@@ -91,13 +91,13 @@ void master_node_init(int max_workers, int& tick_period) {
   //printf("The maximum number of workers %d\n", max_workers);
   // HOW TO SET THIS NUMBER ?
   mstate.max_num_workers = max_workers;
-  // initially, we only setup one workers 
+  // initially, we only setup one workers
   mstate.num_worker_nodes = 0;
   mstate.num_pending_client_requests = 0;
   // used for debug
   mstate.previousTick = 0;
   mstate.time_gap = 0;
-  mstate.decrease_round = 0; 
+  mstate.decrease_round = 0;
   mstate.first_call = false;
   // don't mark the server as ready until the server is ready to go.
   // This is actually when the first worker is up and running, not
@@ -155,12 +155,12 @@ std::string build_cache_key( Request_msg& req){
     std:: string key = req.get_arg("cmd");
     if( req.get_arg("cmd").compare("countprimes") == 0 ) {
         key += ";" + req.get_arg("n");
-    } 
+    }
     else if( req.get_arg("cmd").compare("mostviewed") == 0 ) {
         key += ";" + req.get_arg("start") + ";" + req.get_arg("end");
     }
     else if( req.get_arg("cmd").compare("418wisdom") == 0 ) {
-        key += ";" + req.get_arg("x"); 
+        key += ";" + req.get_arg("x");
     } else {
         key += ";" + req.get_arg("n1") +";" + req.get_arg("n2") + ";" + req.get_arg("n3") +";" + req.get_arg("n4");
     }
@@ -172,7 +172,7 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
   bool isDiskRequestDone = false;
   // do not send response until all done
   if ((*((it->second)->req)).get_arg("cmd").compare("compareprimes") == 0) {
-      std::string result = resp.get_response();   
+      std::string result = resp.get_response();
       unsigned pos = result.find(":");
       int index = atoi(result.substr(0,1).c_str());
       int n = atoi(result.substr(pos+1).c_str());
@@ -195,11 +195,11 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
     send_client_response((it->second)->client, resp);
     // put the reponse into a cache
     cacheInfo* cache_ele = new cacheInfo();
-    cache_ele->tickets = CACHE_TICKETS;  
+    cache_ele->tickets = CACHE_TICKETS;
     cache_ele->res = resp;
     std::string key = build_cache_key(*((it->second)->req));
-    mstate.cache[key] = cache_ele; 
-  
+    mstate.cache[key] = cache_ele;
+
     if( (*((it->second)->req)).get_arg("cmd").compare("mostviewed") == 0) {
             isDiskRequestDone = true;
       }
@@ -207,7 +207,7 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
     delete( it->second );
     mstate.requestsMap.erase(it);
   }
-  
+
   //cout<<(*((it->second)->req)).get_arg("cmd")<<"###\n";
   if( isDiskRequestDone ) {
     if(mstate.disk_waiting_queue.size() == 0) {
@@ -244,14 +244,14 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     send_client_response(client_handle, resp);
     return;
   }
-  /*if (!mstate.first_call) { 
+  /*if (!mstate.first_call) {
   unsigned long long currentTick = CycleTimer::currentTicks();
   unsigned long long gap = (currentTick - mstate.previousTick) * CycleTimer::msPerTick();
   mstate.previousTick = currentTick;
   std:: cout<< "***** "<<gap<<" *****\n";
   if( mstate.time_gap - gap > 0) {
       mstate.decrease_round++;
-  } 
+  }
   else {
       mstate.decrease_round = 0;
   }
@@ -264,7 +264,7 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   }
   mstate.time_gap = gap;
   }*/
-  int tag = random(); 
+  int tag = random();
   Request_msg worker_req(tag, client_req);
 
   // The second thing we should try is to ask cache
@@ -274,7 +274,7 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     send_client_response(client_handle, mstate.cache.find(key)->second->res);
     return;
   }
-  
+
   // store the waiting client into the map
   reqInfo* thisInfo = new reqInfo();
   thisInfo->req = new Request_msg(worker_req);
@@ -297,7 +297,7 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
       params[1] = atoi(worker_req.get_arg("n2").c_str());
       params[2] = atoi(worker_req.get_arg("n3").c_str());
       params[3] = atoi(worker_req.get_arg("n4").c_str());
-      // initialize the sub-requests that have been completed  
+      // initialize the sub-requests that have been completed
       mstate.requestsMap[tag]->counts[4] = 0;
       for(int i = 0; i < 4; i++) {
           std::ostringstream convert1;
@@ -333,6 +333,10 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     mstate.workersMap[thisWorker]->idle_round = 0;
     mstate.workersMap[thisWorker]->num_idle_disk --;
   }
+
+  if ( (mstate.num_worker_nodes < mstate.max_num_workers) && (mstate.cpu_waiting_queue.size() >= 1)) {
+    request_for_worker();
+  }
 }
 
 void kill_worker(Worker_handle worker_handle) {
@@ -359,7 +363,7 @@ void kill_worker(Worker_handle worker_handle) {
 }
 
 void check_worker_status() {
-    std::map<Worker_handle, workerInfo*>::iterator it; 
+    std::map<Worker_handle, workerInfo*>::iterator it;
     for(it = mstate.workersMap.begin(); it != mstate.workersMap.end(); it ++) {
         fprintf(stdout, "| tag: %d, cpu: %d, disk: %d, round: %d", (it->second)->tag, (it->second)->num_idle_cpu,
                 (it->second)->num_idle_disk, (it->second)->idle_round);
@@ -369,22 +373,22 @@ void check_worker_status() {
                 fprintf(stdout,"\nKILL worker %d !!!!\n", (it->second)->tag);
                 kill_worker(it->first);
            }
-        } 
+        }
     }
     printf("\n");
 }
 
 void handle_tick() {
-
+  /*
   if( mstate.num_worker_nodes < mstate.max_num_workers && mstate.cpu_waiting_queue.size() >= 1){
     request_for_worker();
-  }
-  check_worker_status(); 
+    }*/
+  check_worker_status();
   // TODO: you may wish to take action here.  This method is called at
   // fixed time intervals, according to how you set 'tick_period' in
   // 'master_node_init'.
-  // 
-  
+  //
+
   fprintf(stdout, "NUM OF WAITING REQUESTS: %lu\n", mstate.cpu_waiting_queue.size());
   fprintf(stdout, "NUM OF PENDING REQUESTS: %d\n", mstate.num_pending_client_requests);
   fprintf(stdout, "NUM OF WORKERS: %d \n", mstate.num_worker_nodes);
