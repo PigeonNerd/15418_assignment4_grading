@@ -13,8 +13,8 @@
 //#include <iostream>
 
 struct Worker_state {
-    WorkQueue<Request_msg> cpu_work_queue;    
-    WorkQueue<Request_msg> disk_work_queue;    
+    WorkQueue<Request_msg> cpu_work_queue;
+    WorkQueue<Request_msg> disk_work_queue;
 } wstate;
 
 
@@ -66,6 +66,7 @@ static void execute_compareprimes2(const Request_msg& req, Response_msg& resp) {
     result =req.get_arg("index")+":"+dummy_resp.get_response();
     resp.set_response(result);
 }
+
 void* executeWork_cpu(void* arg) {
     while(1) {
       Request_msg req = wstate.cpu_work_queue.get_work();
@@ -79,6 +80,7 @@ void* executeWork_cpu(void* arg) {
     }
     return NULL;
 }
+
 void* executeWork_disk(void* arg) {
     while(1) {
       Request_msg req = wstate.disk_work_queue.get_work();
@@ -133,7 +135,7 @@ void worker_handle_request(const Request_msg& req) {
 /*pthread_t thread_id;
   pthread_attr_t attr; // thread attribute
   Request_msg* cpyReq = new Request_msg(req);
-  // set thread detachstate attribute to DETACHED 
+  // set thread detachstate attribute to DETACHED
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
   pthread_create(&thread_id, &attr, executeWork, cpyReq);*/
