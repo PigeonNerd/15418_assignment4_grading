@@ -257,7 +257,7 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   }
   if(mstate.decrease_round == 2) {
       if(mstate.num_worker_nodes < mstate.max_num_workers) {
-        mstate.first_call = true;
+        //mstate.first_call = true;
         request_for_worker();
     }
       mstate.decrease_round = 0;
