@@ -108,7 +108,7 @@ void master_node_init(int max_workers, int& tick_period) {
 
 void handle_new_worker_online(Worker_handle worker_handle, int tag) {
 
-  mstate.num_worker_nodes ++;
+  //mstate.num_worker_nodes ++;
   // we put new worker into the map to keep track of the status of each worker node
   workerInfo* worker_info = new workerInfo();
   worker_info->tag = tag;
@@ -131,7 +131,7 @@ void handle_new_worker_online(Worker_handle worker_handle, int tag) {
     send_request_to_worker(thisWorker, req);
     mstate.num_pending_client_requests++;
     mstate.workersMap[thisWorker]->idle_round = 0;
-    mstate.workersMap[thisWorker]->num_idle_cpu --;
+    mstate.workersMap[thisWorker]->num_idle_cpu--;
   }
 
   if(mstate.disk_waiting_queue.size() != 0) {
@@ -333,10 +333,6 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     mstate.workersMap[thisWorker]->idle_round = 0;
     mstate.workersMap[thisWorker]->num_idle_disk --;
   }
-
-  if ( (mstate.num_worker_nodes < mstate.max_num_workers) && (mstate.cpu_waiting_queue.size() >= 1)) {
-    request_for_worker();
-  }
 }
 
 void kill_worker(Worker_handle worker_handle) {
@@ -369,7 +365,7 @@ void check_worker_status() {
                 (it->second)->num_idle_disk, (it->second)->idle_round);
         if( (it->second)->num_idle_cpu == 2 && (it->second)->num_idle_disk == 1) {
            (it->second)->idle_round ++;
-            if( (it->second)->idle_round == IDLE_ROUNDS && mstate.num_worker_nodes != 1) {
+            if( (it->second)->idle_round == IDLE_ROUNDS && mstate.workersMap.size() != 1) {
                 fprintf(stdout,"\nKILL worker %d !!!!\n", (it->second)->tag);
                 kill_worker(it->first);
            }
@@ -379,16 +375,11 @@ void check_worker_status() {
 }
 
 void handle_tick() {
-  /*
   if( mstate.num_worker_nodes < mstate.max_num_workers && mstate.cpu_waiting_queue.size() >= 1){
-    request_for_worker();
-    }*/
+        request_for_worker();
+        mstate.num_worker_nodes ++;
+   }
   check_worker_status();
-  // TODO: you may wish to take action here.  This method is called at
-  // fixed time intervals, according to how you set 'tick_period' in
-  // 'master_node_init'.
-  //
-
   fprintf(stdout, "NUM OF WAITING REQUESTS: %lu\n", mstate.cpu_waiting_queue.size());
   fprintf(stdout, "NUM OF PENDING REQUESTS: %d\n", mstate.num_pending_client_requests);
   fprintf(stdout, "NUM OF WORKERS: %d \n", mstate.num_worker_nodes);
