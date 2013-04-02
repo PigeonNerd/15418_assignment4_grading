@@ -13,7 +13,7 @@
 #include <iostream>
 
 #define CACHE_TICKETS 5
-#define IDLE_ROUNDS 2
+#define IDLE_ROUNDS 2 
 
 typedef struct Request_Info {
     Request_msg* req;
@@ -244,26 +244,29 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     send_client_response(client_handle, resp);
     return;
   }
-  /*if (!mstate.first_call) {
   unsigned long long currentTick = CycleTimer::currentTicks();
   unsigned long long gap = (currentTick - mstate.previousTick) * CycleTimer::msPerTick();
   mstate.previousTick = currentTick;
   std:: cout<< "***** "<<gap<<" *****\n";
   if( mstate.time_gap - gap > 0) {
-      mstate.decrease_round++;
-  }
-  else {
-      mstate.decrease_round = 0;
-  }
-  if(mstate.decrease_round == 2) {
+      //mstate.decrease_round++;
       if(mstate.num_worker_nodes < mstate.max_num_workers) {
         //mstate.first_call = true;
+        mstate.num_worker_nodes++;
         request_for_worker();
     }
       mstate.decrease_round = 0;
   }
-  mstate.time_gap = gap;
+  /*if(mstate.decrease_round == 2) {
+      if(mstate.num_worker_nodes < mstate.max_num_workers) {
+        //mstate.first_call = true;
+        mstate.num_worker_nodes++;
+        request_for_worker();
+    }
+      mstate.decrease_round = 0;
   }*/
+  mstate.time_gap = gap;
+  
   int tag = random();
   Request_msg worker_req(tag, client_req);
 
