@@ -48,7 +48,8 @@ static struct Master_state {
   double time_gap;
   unsigned long long previousTick;
   int decrease_round;
-  bool first_call;
+  unsigned int first_call;
+  int add_round;
 
   std::vector<Worker_handle>cpu_workers_queue;
   std::vector<Worker_handle>disk_workers_queue;
@@ -92,17 +93,19 @@ void master_node_init(int max_workers, int& tick_period) {
   // HOW TO SET THIS NUMBER ?
   mstate.max_num_workers = max_workers;
   // initially, we only setup one workers
-  mstate.num_worker_nodes = 0;
+  mstate.num_worker_nodes = 2;
   mstate.num_pending_client_requests = 0;
   // used for debug
   mstate.previousTick = 0;
   mstate.time_gap = 0;
   mstate.decrease_round = 0;
-  mstate.first_call = false;
+  mstate.first_call = 2;
+  mstate.add_round = 0;
   // don't mark the server as ready until the server is ready to go.
   // This is actually when the first worker is up and running, not
   // when 'master_node_init' returnes
   mstate.server_ready = false;
+  request_for_worker();
   request_for_worker();
 }
 
@@ -244,7 +247,7 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     send_client_response(client_handle, resp);
     return;
   }
-  unsigned long long currentTick = CycleTimer::currentTicks();
+  /*unsigned long long currentTick = CycleTimer::currentTicks();
   unsigned long long gap = (currentTick - mstate.previousTick) * CycleTimer::msPerTick();
   mstate.previousTick = currentTick;
   std:: cout<< "***** "<<gap<<" *****\n";
@@ -257,15 +260,15 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     }
       mstate.decrease_round = 0;
   }
-  /*if(mstate.decrease_round == 2) {
+  if(mstate.decrease_round == 2) {
       if(mstate.num_worker_nodes < mstate.max_num_workers) {
         //mstate.first_call = true;
         mstate.num_worker_nodes++;
         request_for_worker();
     }
       mstate.decrease_round = 0;
-  }*/
-  mstate.time_gap = gap;
+  }
+  mstate.time_gap = gap;*/
   
   int tag = random();
   Request_msg worker_req(tag, client_req);
@@ -292,7 +295,9 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   }
   else if (worker_req.get_arg("cmd").compare("compareprimes") == 0) {
       /*if(mstate.num_worker_nodes < mstate.max_num_workers) {
+        fprintf(stdout, "ask for more workers\n");
         request_for_worker();
+        mstate.num_worker_nodes++;
       }*/
       isCompare = 4;
       int params[4];
@@ -368,7 +373,7 @@ void check_worker_status() {
                 (it->second)->num_idle_disk, (it->second)->idle_round);
         if( (it->second)->num_idle_cpu == 2 && (it->second)->num_idle_disk == 1) {
            (it->second)->idle_round ++;
-            if( (it->second)->idle_round == IDLE_ROUNDS && mstate.workersMap.size() != 1) {
+            if( (it->second)->idle_round == IDLE_ROUNDS && mstate.workersMap.size() != mstate.first_call) {
                 fprintf(stdout,"\nKILL worker %d !!!!\n", (it->second)->tag);
                 kill_worker(it->first);
            }
@@ -378,9 +383,14 @@ void check_worker_status() {
 }
 
 void handle_tick() {
-  if( mstate.num_worker_nodes < mstate.max_num_workers && mstate.cpu_waiting_queue.size() >= 1){
-        request_for_worker();
-        mstate.num_worker_nodes ++;
+  mstate.add_round++;
+    if( mstate.add_round == 3 || mstate.cpu_waiting_queue.size() >= 1){
+        if ( mstate.num_worker_nodes < mstate.max_num_workers ) { 
+            request_for_worker();
+            mstate.first_call = 1; 
+            mstate.num_worker_nodes ++;
+        }
+        mstate.add_round = 0;
    }
   check_worker_status();
   fprintf(stdout, "NUM OF WAITING REQUESTS: %lu\n", mstate.cpu_waiting_queue.size());
