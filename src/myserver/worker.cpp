@@ -12,6 +12,7 @@
 //#include <cstring>
 //#include <iostream>
 
+// Initialize the CPU and disk queues
 struct Worker_state {
     WorkQueue<Request_msg> cpu_work_queue;
     WorkQueue<Request_msg> disk_work_queue;
@@ -29,6 +30,9 @@ static void create_computeprimes_req(Request_msg& req, int n) {
 // Implements logic required by primerange command for the request
 // 'req' using multiple calls to execute_work.  This function fills in
 // the appropriate response.
+
+// IS NOT USED??? SHOULD BE DELETED?????
+
 static void execute_compareprimes(const Request_msg& req, Response_msg& resp) {
 
     int params[4];
@@ -67,6 +71,8 @@ static void execute_compareprimes2(const Request_msg& req, Response_msg& resp) {
     resp.set_response(result);
 }
 
+// Pop work from the CPU queue, execute, and
+// send the response back to the master
 void* executeWork_cpu(void* arg) {
     while(1) {
       Request_msg req = wstate.cpu_work_queue.get_work();
@@ -81,6 +87,8 @@ void* executeWork_cpu(void* arg) {
     return NULL;
 }
 
+// Pop work from the disk queue, execute, and
+// send the response back to the master
 void* executeWork_disk(void* arg) {
     while(1) {
       Request_msg req = wstate.disk_work_queue.get_work();
@@ -91,12 +99,11 @@ void* executeWork_disk(void* arg) {
     }
     return NULL;
 }
+
+// Initialize three threads per worker. Two of the threads
+// will execute CPU work, and one will execute disk work
 void worker_node_init(const Request_msg& params) {
 
-  // This is your chance to initialize your worker.  For example, you
-  // might initialize a few data structures, or maybe even spawn a few
-  // pthreads here.  Remember, when running on Amazon servers, worker
-  // processes will run on an instance with a dual-core CPU.
   fprintf( stdout, "**** Initializing worker: %s ****\n", params.get_arg("name").c_str());
   pthread_t thread_1;
   pthread_t thread_2;
@@ -106,6 +113,10 @@ void worker_node_init(const Request_msg& params) {
   pthread_create(&thread_3, NULL, executeWork_disk, NULL);
 }
 
+// Execute work normally for every request type except for
+// compareprimes, which calls a special function execute_compareprimes.
+// This function handles the case of compareprimes requests broken
+// up into four subrequests.
 void* executeWork(void* arg) {
   Request_msg* req = (Request_msg*) arg;
   Response_msg resp((*req).get_tag());
@@ -132,11 +143,4 @@ void worker_handle_request(const Request_msg& req) {
         return;
    }
     wstate.cpu_work_queue.put_work(req);
-/*pthread_t thread_id;
-  pthread_attr_t attr; // thread attribute
-  Request_msg* cpyReq = new Request_msg(req);
-  // set thread detachstate attribute to DETACHED
-  pthread_attr_init(&attr);
-  pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-  pthread_create(&thread_id, &attr, executeWork, cpyReq);*/
 }

@@ -13,14 +13,20 @@
 #include <iostream>
 
 #define CACHE_TICKETS 5
-#define IDLE_ROUNDS 2 
+#define IDLE_ROUNDS 2
 
+/* Each incoming request is stores the request type,
+ * the client, and an array of size 5  in a Request_info
+ * struct */
 typedef struct Request_Info {
     Request_msg* req;
     Client_handle client;
     int counts[5];
 } reqInfo;
 
+/* Each worker that is initialized stores its tag ID,
+ * the number of idle CPU threads, the number of idle disk
+ * threads, and the number of ticks it has been idle for. */
 typedef struct Worker_Info {
     int tag;
     int num_idle_cpu;
@@ -28,6 +34,8 @@ typedef struct Worker_Info {
     int idle_round;
 } workerInfo;
 
+/* Store a response and the number of ticks it has been
+   in the cache, for eviction purposes. */
 typedef struct cache_info {
     Response_msg res;
     int tickets;
@@ -41,37 +49,40 @@ static struct Master_state {
   // code.
 
   bool server_ready;
-  int max_num_workers;
+  int max_num_workers; //limited to 4 on AWS
   int num_pending_client_requests;
-  int num_worker_nodes;
+  int num_worker_nodes; //start with 2
 
   unsigned int first_call;
   int add_round;
 
-  std::vector<Worker_handle>cpu_workers_queue;
-  std::vector<Worker_handle>disk_workers_queue;
-  std::vector<Request_msg>cpu_waiting_queue;
-  std::vector<Request_msg>disk_waiting_queue;
-  std:: map<int, reqInfo*> requestsMap;
-  std:: map<Worker_handle, workerInfo*> workersMap;
-  std::map<std::string, cacheInfo*> cache;
+  std::vector<Worker_handle>cpu_workers_queue; //Queue tracking the available CPU workers
+  std::vector<Worker_handle>disk_workers_queue; //Queue tracking the available disk workers
+  std::vector<Request_msg>cpu_waiting_queue; //Queue tracking the waiting CPU requests
+  std::vector<Request_msg>disk_waiting_queue; //Queue trakcing the waiting disk requests
+  std:: map<int, reqInfo*> requestsMap; //Initialize the request dictionary
+  std:: map<Worker_handle, workerInfo*> workersMap; //Initialize the workers dictionary
+  std::map<std::string, cacheInfo*> cache; // create the cache
   Worker_handle my_worker;
   Client_handle waiting_client;
 
 } mstate;
 
+//Pop the first available worker in the appropriate queue and return
 Worker_handle get_worker( std::vector<Worker_handle>& queue) {
     Worker_handle thisWorker = queue.front();
     queue.erase(queue.begin());
     return thisWorker;
 }
 
+//Pop the first available request in the appropriate queue and return
 Request_msg get_request( std::vector<Request_msg>& queue ) {
     Request_msg thisRequest = queue.front();
     queue.erase(queue.begin());
     return thisRequest;
 }
 
+//Give the new worker a tag and identifiable name
 void request_for_worker() {
      int tag = random();
      Request_msg req(tag);
@@ -81,23 +92,29 @@ void request_for_worker() {
      request_new_worker_node(req);
 }
 
+
+
 void master_node_init(int max_workers, int& tick_period) {
 
-  // set up tick handler to fire every 5 seconds. (feel free to
+  // set up tick handler to fire every 1 seconds. (feel free to
   // configure as you please)
   tick_period = 1;
-  //printf("The maximum number of workers %d\n", max_workers);
-  // HOW TO SET THIS NUMBER ?
+
   mstate.max_num_workers = max_workers;
-  // initially, we only setup one workers
+
+  // initially, we set up two workers instead of one. We do this because
+  // we receive a request for compareprimes in the beginning, and this request
+  // will be broken up into 4 subrequests. Since each worker only spawns
+  // 3 threads, we will need at least two workers to process such a request.
   mstate.num_worker_nodes = 2;
   mstate.num_pending_client_requests = 0;
-  // used for debug
+
   mstate.first_call = 2;
   mstate.add_round = 0;
+
   // don't mark the server as ready until the server is ready to go.
   // This is actually when the first worker is up and running, not
-  // when 'master_node_init' returnes
+  // when 'master_node_init' returns
   mstate.server_ready = false;
   request_for_worker();
   request_for_worker();
@@ -105,8 +122,7 @@ void master_node_init(int max_workers, int& tick_period) {
 
 void handle_new_worker_online(Worker_handle worker_handle, int tag) {
 
-  //mstate.num_worker_nodes ++;
-  // we put new worker into the map to keep track of the status of each worker node
+  // we put the new worker into the map to keep track of the status of each worker node
   workerInfo* worker_info = new workerInfo();
   worker_info->tag = tag;
   worker_info->num_idle_cpu = 2;
@@ -122,6 +138,10 @@ void handle_new_worker_online(Worker_handle worker_handle, int tag) {
   mstate.cpu_workers_queue.push_back( worker_handle );
   mstate.disk_workers_queue.push_back( worker_handle );
 
+  // Check if there are waiting CPU requests. If so, grab the first
+  // worker from the workers queue and send the request to the worker.
+  // Reset the worker's idle round to 0 since it is now busy, and the
+  // number of idle CPU threads will decrement.
   if(mstate.cpu_waiting_queue.size() != 0) {
     Worker_handle thisWorker = get_worker(mstate.cpu_workers_queue);
     Request_msg req = get_request(mstate.cpu_waiting_queue);
@@ -131,6 +151,10 @@ void handle_new_worker_online(Worker_handle worker_handle, int tag) {
     mstate.workersMap[thisWorker]->num_idle_cpu--;
   }
 
+  // Check if there are waiting disk requests. If so, grab the first
+  // worker from the workers disk queue and send the request to the worker.
+  // Reset the worker's idle round to 0 since it is now busy, and the
+  // number of idle disk threads will decrement.
   if(mstate.disk_waiting_queue.size() != 0) {
     Worker_handle thisWorker = get_worker(mstate.disk_workers_queue);
     Request_msg req = get_request(mstate.disk_waiting_queue);
@@ -148,6 +172,8 @@ void handle_new_worker_online(Worker_handle worker_handle, int tag) {
   }
 }
 
+// Given a request, get its command type and use it as a key
+// for the cache.
 std::string build_cache_key( Request_msg& req){
     std:: string key = req.get_arg("cmd");
     if( req.get_arg("cmd").compare("countprimes") == 0 ) {
@@ -164,10 +190,14 @@ std::string build_cache_key( Request_msg& req){
     return key;
 }
 
+
 void handle_worker_response(Worker_handle worker_handle, const Response_msg& resp) {
   std::map<int,reqInfo*>::iterator it = mstate.requestsMap.find(resp.get_tag());
   bool isDiskRequestDone = false;
+
   // do not send response until all done
+  // If the request is for compareprimes, then compile the four subrequests
+  // once they are finished for the answer to the original request.
   if ((*((it->second)->req)).get_arg("cmd").compare("compareprimes") == 0) {
       std::string result = resp.get_response();
       unsigned pos = result.find(":");
@@ -187,7 +217,10 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
         delete( it->second );
         mstate.requestsMap.erase(it);
       }
-  } else {
+  }
+  // If it is not a "compareprimes" request, then the response is sent
+  // back to the client and inserted into the cache.
+  else {
     // send the message back to the client
     send_client_response((it->second)->client, resp);
     // put the reponse into a cache
@@ -205,6 +238,12 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
     mstate.requestsMap.erase(it);
   }
 
+  // Once the master has handled the request, it will check the disk
+  // waiting queue to see if there are any requests currently waiting
+  // in the queue. If not, then the worker that just finished processing
+  // the request will be pushed back into the queue and set to idle. If
+  // there are workers in the queue, then the next waiting request is
+  // assigned to the worker and the idle state of the worker is set back to 0.
   if( isDiskRequestDone ) {
     if(mstate.disk_waiting_queue.size() == 0) {
         mstate.disk_workers_queue.push_back( worker_handle);
@@ -218,7 +257,9 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
   }
 
   mstate.num_pending_client_requests--;
-  // here means we do not have more work right now
+  // Similarly, checks the number of waiting CPU requests and either pushes
+  // the worker into the queue if there are none or assigns the next waiting
+  // request to the worker.
   if( mstate.cpu_waiting_queue.size() == 0) {
     mstate.cpu_workers_queue.push_back( worker_handle );
     mstate.workersMap[worker_handle]->num_idle_cpu++;
@@ -240,10 +281,13 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     send_client_response(client_handle, resp);
     return;
   }
-  
+
   int tag = random();
   Request_msg worker_req(tag, client_req);
-  // The second thing we should try is to ask cache
+
+  // First we check if the request has already been computed and stored
+  // in the cache. We can just return the response instead of sending
+  // the request to a worker.
   std:: string key = build_cache_key( worker_req);
   if ( mstate.cache.find(key) != mstate.cache.end() ) {
     send_client_response(client_handle, mstate.cache.find(key)->second->res);
@@ -256,12 +300,19 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   thisInfo->client = client_handle;
   mstate.requestsMap[tag] = thisInfo;
 
-  // for optimization of compareprimes 
+  // This value determines how many subrequests to break the
+  // request up into. The value will remain 1 for all requests
+  // except for compareprimes, which will be broken up in to
+  // 4 subrequests.
   int isCompare = 1;
 
   if(worker_req.get_arg("cmd").compare("mostviewed") == 0) {
     mstate.disk_waiting_queue.push_back(worker_req);
   }
+
+  // If the request is for compareprimes, then we must break it up
+  // into 4 subrequests. They will each run compareprimes on smaller
+  // ranges, and we push each subrequest back into the requests queue.
   else if (worker_req.get_arg("cmd").compare("compareprimes") == 0) {
       isCompare = 4;
       int params[4];
@@ -288,6 +339,10 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     mstate.cpu_waiting_queue.push_back(worker_req);
   }
 
+  // Make sure that all four subrequests are popped from the queueu
+  // and computed before checking for further requests. This ensure that
+  // we find the result of the original compareprimes request before
+  // assigning workers to other requests.
   while(isCompare && mstate.cpu_waiting_queue.size() != 0 && mstate.cpu_workers_queue.size() != 0) {
     Worker_handle thisWorker = get_worker(mstate.cpu_workers_queue);
     Request_msg req = get_request(mstate.cpu_waiting_queue);
@@ -298,6 +353,8 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     isCompare--;
   }
 
+  // If there are remaining workers and requests for disk accesses then send the
+  // requests to the workers.
   if(mstate.disk_waiting_queue.size() != 0 && mstate.disk_workers_queue.size() != 0) {
     Worker_handle thisWorker = get_worker(mstate.disk_workers_queue);
     Request_msg req = get_request(mstate.disk_waiting_queue);
@@ -306,6 +363,7 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     mstate.workersMap[thisWorker]->num_idle_disk --;
   }
 }
+
 
 void kill_worker(Worker_handle worker_handle) {
     // search both cpu_workers_queue and disk_workers_queue
@@ -327,6 +385,10 @@ void kill_worker(Worker_handle worker_handle) {
    mstate.workersMap.erase(it);
 }
 
+// Check each worker in the workers dictionary. If worker i has two idle CPU threads
+// and one idle disk thread, then increment the number of idle rounds. If that worker
+// has reached the maximum number of idle rounds and it is not the only active worker,
+// kill the worker.
 void check_worker_status() {
     std::map<Worker_handle, workerInfo*>::iterator it;
     for(it = mstate.workersMap.begin(); it != mstate.workersMap.end(); it ++) {
@@ -335,27 +397,29 @@ void check_worker_status() {
         if( (it->second)->num_idle_cpu == 2 && (it->second)->num_idle_disk == 1) {
            (it->second)->idle_round ++;
             if( (it->second)->idle_round == IDLE_ROUNDS && mstate.workersMap.size() != mstate.first_call) {
-                //fprintf(stdout,"\nKILL worker %d !!!!\n", (it->second)->tag);
-                kill_worker(it->first);
-           }
+	      kill_worker(it->first);
+	    }
         }
     }
     printf("\n");
 }
 
+// Compare the number of available worker nodes, and if there are less
+// than the maximum number of possible workers then request a new worker.
+// Then, check each worker's status to kill any idle workers.
 void handle_tick() {
   mstate.add_round++;
     if( mstate.add_round == 3 || mstate.cpu_waiting_queue.size() >= 1){
-        if ( mstate.num_worker_nodes < mstate.max_num_workers ) { 
+        if ( mstate.num_worker_nodes < mstate.max_num_workers ) {
             request_for_worker();
-            mstate.first_call = 1; 
+            mstate.first_call = 1;
             mstate.num_worker_nodes ++;
         }
         mstate.add_round = 0;
-   }
-  check_worker_status();
-  fprintf(stdout, "NUM OF WAITING REQUESTS: %lu\n", mstate.cpu_waiting_queue.size());
-  fprintf(stdout, "NUM OF PENDING REQUESTS: %d\n", mstate.num_pending_client_requests);
-  fprintf(stdout, "NUM OF WORKERS: %d \n", mstate.num_worker_nodes);
+    }
+    check_worker_status();
+    fprintf(stdout, "NUM OF WAITING REQUESTS: %lu\n", mstate.cpu_waiting_queue.size());
+    fprintf(stdout, "NUM OF PENDING REQUESTS: %d\n", mstate.num_pending_client_requests);
+    fprintf(stdout, "NUM OF WORKERS: %d \n", mstate.num_worker_nodes);
 }
 
