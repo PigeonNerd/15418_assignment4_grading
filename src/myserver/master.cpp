@@ -45,9 +45,6 @@ static struct Master_state {
   int num_pending_client_requests;
   int num_worker_nodes;
 
-  double time_gap;
-  unsigned long long previousTick;
-  int decrease_round;
   unsigned int first_call;
   int add_round;
 
@@ -96,9 +93,6 @@ void master_node_init(int max_workers, int& tick_period) {
   mstate.num_worker_nodes = 2;
   mstate.num_pending_client_requests = 0;
   // used for debug
-  mstate.previousTick = 0;
-  mstate.time_gap = 0;
-  mstate.decrease_round = 0;
   mstate.first_call = 2;
   mstate.add_round = 0;
   // don't mark the server as ready until the server is ready to go.
@@ -211,7 +205,6 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
     mstate.requestsMap.erase(it);
   }
 
-  //cout<<(*((it->second)->req)).get_arg("cmd")<<"###\n";
   if( isDiskRequestDone ) {
     if(mstate.disk_waiting_queue.size() == 0) {
         mstate.disk_workers_queue.push_back( worker_handle);
@@ -247,36 +240,12 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     send_client_response(client_handle, resp);
     return;
   }
-  /*unsigned long long currentTick = CycleTimer::currentTicks();
-  unsigned long long gap = (currentTick - mstate.previousTick) * CycleTimer::msPerTick();
-  mstate.previousTick = currentTick;
-  std:: cout<< "***** "<<gap<<" *****\n";
-  if( mstate.time_gap - gap > 0) {
-      //mstate.decrease_round++;
-      if(mstate.num_worker_nodes < mstate.max_num_workers) {
-        //mstate.first_call = true;
-        mstate.num_worker_nodes++;
-        request_for_worker();
-    }
-      mstate.decrease_round = 0;
-  }
-  if(mstate.decrease_round == 2) {
-      if(mstate.num_worker_nodes < mstate.max_num_workers) {
-        //mstate.first_call = true;
-        mstate.num_worker_nodes++;
-        request_for_worker();
-    }
-      mstate.decrease_round = 0;
-  }
-  mstate.time_gap = gap;*/
   
   int tag = random();
   Request_msg worker_req(tag, client_req);
-
   // The second thing we should try is to ask cache
   std:: string key = build_cache_key( worker_req);
   if ( mstate.cache.find(key) != mstate.cache.end() ) {
-    //printf("CACHE HIT !!!\n");
     send_client_response(client_handle, mstate.cache.find(key)->second->res);
     return;
   }
@@ -287,18 +256,13 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   thisInfo->client = client_handle;
   mstate.requestsMap[tag] = thisInfo;
 
-  // for testing
+  // for optimization of compareprimes 
   int isCompare = 1;
 
   if(worker_req.get_arg("cmd").compare("mostviewed") == 0) {
     mstate.disk_waiting_queue.push_back(worker_req);
   }
   else if (worker_req.get_arg("cmd").compare("compareprimes") == 0) {
-      /*if(mstate.num_worker_nodes < mstate.max_num_workers) {
-        fprintf(stdout, "ask for more workers\n");
-        request_for_worker();
-        mstate.num_worker_nodes++;
-      }*/
       isCompare = 4;
       int params[4];
       params[0] = atoi(worker_req.get_arg("n1").c_str());
@@ -350,20 +314,17 @@ void kill_worker(Worker_handle worker_handle) {
     int i;
     for(i = mstate.cpu_workers_queue.size() - 1; i >= 0; i--) {
         if(mstate.cpu_workers_queue[i] == worker_handle ) {
-            //printf("DONE1\n");
             mstate.cpu_workers_queue.erase(mstate.cpu_workers_queue.begin() + i);
         }
     }
     for(i = mstate.disk_workers_queue.size() - 1; i >= 0; i--) {
         if(mstate.disk_workers_queue[i] == worker_handle ) {
-            //printf("DONE2\n");
             mstate.disk_workers_queue.erase(mstate.disk_workers_queue.begin() + i);
         }
     }
    std::map<Worker_handle, workerInfo*>::iterator it = mstate.workersMap.find(worker_handle);
    delete(it->second);
    mstate.workersMap.erase(it);
-   //printf("end kill worker\n");
 }
 
 void check_worker_status() {
@@ -374,7 +335,7 @@ void check_worker_status() {
         if( (it->second)->num_idle_cpu == 2 && (it->second)->num_idle_disk == 1) {
            (it->second)->idle_round ++;
             if( (it->second)->idle_round == IDLE_ROUNDS && mstate.workersMap.size() != mstate.first_call) {
-                fprintf(stdout,"\nKILL worker %d !!!!\n", (it->second)->tag);
+                //fprintf(stdout,"\nKILL worker %d !!!!\n", (it->second)->tag);
                 kill_worker(it->first);
            }
         }
